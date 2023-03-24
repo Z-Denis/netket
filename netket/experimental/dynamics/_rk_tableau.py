@@ -229,6 +229,17 @@ bt_heun = TableauRKExplicit(
 bt_heun = NamedTableau("Heun", bt_heun)
 
 
+bt_ralston = TableauRKExplicit(
+                order = (2,),
+                a = jnp.array([[0,   0],
+                               [2/3, 0]], dtype=default_dtype),
+                b = jnp.array( [1/4, 3/4], dtype=default_dtype),
+                c = jnp.array( [0, 2/3], dtype=default_dtype),
+                c_error = None,
+                )
+bt_ralston = NamedTableau("Ralston", bt_ralston)
+
+
 bt_rk4  = TableauRKExplicit(
                 order = (4,),
                 a = jnp.array([[0,   0,   0,   0],

@@ -83,6 +83,15 @@ def Heun(dt):
 
 
 @append_docstring(args_fixed_dt_docstring)
+def Ralston(dt):
+    r"""
+    The second order Ralston's method. Fixed timestep only.
+
+    """
+    return RKIntegratorConfig(dt, tableau=rkt.bt_ralston)
+
+
+@append_docstring(args_fixed_dt_docstring)
 def RK4(dt):
     r"""
     The canonical Runge-Kutta Order 4 method. Fixed timestep only.

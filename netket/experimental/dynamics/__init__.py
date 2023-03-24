@@ -18,6 +18,7 @@ __all__ = [
     "RKIntegratorConfig",
     "Euler",
     "Heun",
+    "Ralston",
     "Midpoint",
     "RK4",
     "RK12",
@@ -26,7 +27,7 @@ __all__ = [
 ]
 
 from ._rk_solver_structures import RungeKuttaIntegrator, RKIntegratorConfig
-from ._rk_solver import Euler, Heun, Midpoint, RK4, RK12, RK23, RK45
+from ._rk_solver import Euler, Heun, Ralston, Midpoint, RK4, RK12, RK23, RK45
 
 from netket.utils import _hide_submodules
 
