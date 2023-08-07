@@ -11,3 +11,229 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from typing import Optional
+
+import numpy as np
+
+from jax import numpy as jnp
+
+from netket.graph import AbstractGraph, Graph
+from netket.hilbert import Fock
+from netket.utils.numbers import dtype as _dtype
+from netket.utils.types import DType
+
+from .. import boson
+from .._hamiltonian import SpecialHamiltonian
+from .._local_operator import LocalOperator
+
+
+class BoseHubbardBase(SpecialHamiltonian):
+    r"""
+    An extended Bose Hubbard model Hamiltonian operator, containing both
+    on-site interactions and nearest-neighboring density-density interactions.
+    """
+
+    def __init__(
+        self,
+        hilbert: Fock,
+        graph: AbstractGraph,
+        U: float,
+        V: float = 0.0,
+        J: float = 1.0,
+        mu: float = 0.0,
+        dtype: Optional[DType] = None,
+    ):
+        r"""
+        Constructs a new BoseHubbard operator given a hilbert space, a graph
+        specifying the connectivity and the interaction strength.
+        The chemical potential and the density-density interaction strength
+        can be specified as well.
+
+        Args:
+           hilbert: Hilbert space the operator acts on.
+           U: The on-site interaction term.
+           V: The strength of density-density interaction term.
+           J: The hopping amplitude.
+           mu: The chemical potential.
+           dtype: The dtype of the matrix elements.
+
+        Examples:
+           Constructs a BoseHubbard operator for a 2D system.
+
+           >>> import netket as nk
+           >>> g = nk.graph.Hypercube(length=3, n_dim=2, pbc=True)
+           >>> hi = nk.hilbert.Fock(n_max=3, n_particles=6, N=g.n_nodes)
+           >>> op = nk.operator.BoseHubbard(hi, U=4.0, graph=g)
+           >>> print(op.hilbert.size)
+           9
+        """
+        super().__init__(hilbert)
+
+        if dtype is None:
+            if dtype is None:
+                dtype = jnp.promote_types(_dtype(U), _dtype(V))
+                dtype = jnp.promote_types(dtype, _dtype(J))
+                dtype = jnp.promote_types(dtype, _dtype(mu))
+            dtype = jnp.promote_types(float, dtype)
+
+        if isinstance(graph, AbstractGraph):
+            if graph.n_nodes != hilbert.size:
+                raise ValueError(
+                    """
+                    The size of the graph must match the hilbert space.
+                    """
+                )
+            # support also a matrix input in here.
+            graph = graph.edges()
+
+        if isinstance(graph, list):
+            graph = np.asarray(
+                [[u, v] for u, v in graph],
+                dtype=np.intp,
+            )
+
+        if graph.ndim != 2 or graph.shape[1] != 2:
+            raise ValueError(
+                """
+                Graph should be one of:
+                    - NetKet graph type (nk.operator.AbstractGraph)
+                    - List of tuples, describing the edges
+                    - a (N,2) array of integers.
+                """
+            )
+
+        # Fallback to float32 when float64 is disabled in JAX
+        dtype = jnp.empty((), dtype=dtype).dtype
+
+        self._dtype = dtype
+        self._U = np.asarray(U, dtype=dtype)
+        self._V = np.asarray(V, dtype=dtype)
+        self._J = np.asarray(J, dtype=dtype)
+        self._mu = np.asarray(mu, dtype=dtype)
+        self._edges = graph.astype(np.intp)
+
+    @property
+    def U(self):
+        """The strength of on-site interaction term."""
+        return self._U
+
+    @property
+    def V(self):
+        """The strength of density-density interaction term."""
+        return self._V
+
+    @property
+    def J(self):
+        """The hopping amplitude."""
+        return self._J
+
+    @property
+    def mu(self):
+        """The chemical potential."""
+        return self._mu
+
+    @property
+    def edges(self) -> np.ndarray:
+        """The (N_conns, 2) matrix of edges on which the interaction term
+        is non-zero.
+        """
+        return self._edges
+
+    @property
+    def is_hermitian(self) -> bool:
+        """A boolean stating whether this hamiltonian is hermitian."""
+        return True
+
+    @property
+    def dtype(self):
+        return self._dtype
+
+    def conjugate(self, *, concrete=True):
+        # if real
+        if isinstance(self.V, float) and isinstance(self.J, float):
+            return self
+        else:
+            raise NotImplementedError
+
+    def n_conn(self, x, out=None):  # pragma: no cover
+        r"""Return the number of states connected to x.
+
+        Args:
+            x (matrix): A matrix of shape (batch_size,hilbert.size) containing
+                        the batch of quantum numbers x.
+            out (array): If None an output array is allocated.
+
+        Returns:
+            array: The number of connected states x' for each x[i].
+
+        """
+        if out is None:
+            out = np.empty(x.shape[0], dtype=np.int32)
+        out.fill(1 + 2 * len(self._edges))
+        return out
+
+    @property
+    def max_conn_size(self) -> int:
+        """The maximum number of non zero ⟨x|O|x'⟩ for every x."""
+        return 1 + 2 * len(self._edges)
+
+    def copy(self, *, dtype: Optional[DType] = None):
+        if dtype is None:
+            dtype = self.dtype
+        graph = Graph(edges=[list(edge) for edge in self.edges])
+        return type(self)(
+            hilbert=self.hilbert,
+            graph=graph,
+            U=self.U.item(),
+            V=self.V.item(),
+            J=self.J.item(),
+            mu=self.mu.item(),
+            dtype=dtype,
+        )
+
+    def to_local_operator(self):
+        # The hamiltonian
+        ha = LocalOperator(self.hilbert, dtype=self.dtype)
+
+        if self.U != 0 or self.mu != 0:
+            for i in range(self.hilbert.size):
+                n_i = boson.number(self.hilbert, i)
+                ha += (self.U / 2) * n_i * (n_i - 1) - self.mu * n_i
+
+        if self.J != 0:
+            for (i, j) in self.edges:
+                ha += self.V * (
+                    boson.number(self.hilbert, i) * boson.number(self.hilbert, j)
+                )
+                ha -= self.J * (
+                    boson.destroy(self.hilbert, i) * boson.create(self.hilbert, j)
+                    + boson.create(self.hilbert, i) * boson.destroy(self.hilbert, j)
+                )
+
+        return ha
+
+    def _iadd_same_hamiltonian(self, other):
+        if self.hilbert != other.hilbert:
+            raise NotImplementedError(
+                "Cannot add hamiltonians on different hilbert spaces"
+            )
+
+        self._U += other.U
+        self._V += other.V
+        self._J += other.J
+        self._mu += other.mu
+
+    def _isub_same_hamiltonian(self, other):
+        if self.hilbert != other.hilbert:
+            raise NotImplementedError(
+                "Cannot add hamiltonians on different hilbert spaces"
+            )
+
+        self._U -= other.U
+        self._V -= other.V
+        self._J -= other.J
+        self._mu -= other.mu
+
+    def __repr__(self):
+        return f"{type(self).__name__}(U={self._U}, V={self._V}, J={self._J}, mu={self._mu}; dim={self.hilbert.size})"
