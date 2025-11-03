@@ -304,7 +304,13 @@ class Infidelity_SR(AbstractVariationalDriver):
             else:
                 compute_sr_update_fun = sr
 
-        samples = _flatten_samples(self.state.samples)
+        if isinstance(self.state, FullSumState):
+            samples = self.state.hilbert.all_states()
+            pdf = self.state.probability_distribution()
+        else:
+            samples = _flatten_samples(self.state.samples)
+            pdf = None
+
         self._dp, self._old_updates, self.info = compute_sr_update_fun(
             self.state._apply_fun,
             local_energies,
@@ -318,6 +324,7 @@ class Infidelity_SR(AbstractVariationalDriver):
             momentum=momentum,
             old_updates=self._old_updates,
             chunk_size=self.chunk_size_bwd,
+            pdf=pdf,
         )
 
         self._dp = jax.tree_util.tree_map(lambda x: -x, self._dp)
