@@ -19,11 +19,12 @@ def _prepare_input(
     local_grad,
     *,
     mode: str,
+    weights: Array | None = None,
 ) -> tuple[jax.Array, jax.Array]:
     r"""
     Prepare the input for the SR/SRt solvers.
 
-    The local eneriges and the jacobian are reshaped, centered and normalized by the number of Monte Carlo samples.
+    The local energies and the jacobian are reshaped, centered and normalized by the number of Monte Carlo samples.
     The complex case is handled by concatenating the real and imaginary parts of the jacobian and the local energies.
 
     We use [Re_x1, Im_x1, Re_x2, Im_x2, ...] so that shards are contiguous, and jax can keep track of the sharding information.
@@ -86,6 +87,7 @@ def _sr_srt_common(
     old_updates: PyTree | None = None,
     chunk_size: int | None = None,
     use_ntk: bool = False,
+    weights: Array | None = None,
 ):
     r"""
     Compute the SR/Natural gradient update for the model specified by
@@ -107,10 +109,19 @@ def _sr_srt_common(
     Returns:
         The new parameters, the old updates, and the info dictionary.
     """
+    if use_ntk and weights is not None:
+        raise NotImplementedError(
+            "pdf is not currently supported when using NTK/MinSR. Please set pdf=None."
+        )
+
     _, unravel_params_fn = ravel_pytree(parameters)
     _params_structure = jax.tree_util.tree_map(
         lambda x: jax.ShapeDtypeStruct(x.shape, x.dtype), parameters
     )
+
+    # Normalize weights for self-normalized importance sampling
+    if weights:
+        weights = weights / jnp.mean(weights)
 
     jacobians = nkjax.jacobian(
         log_psi,
@@ -121,9 +132,10 @@ def _sr_srt_common(
         dense=True,
         center=True,
         chunk_size=chunk_size,
+        pdf=weights,
     )  # jacobian is centered
 
-    O_L, dv = _prepare_input(jacobians, local_grad, mode=mode)
+    O_L, dv = _prepare_input(jacobians, local_grad, mode=mode, weights=weights)
 
     if old_updates is None and momentum is not None:
         old_updates = jnp.zeros(jacobians.shape[-1], dtype=jacobians.dtype)
