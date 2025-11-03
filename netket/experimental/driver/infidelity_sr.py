@@ -212,14 +212,16 @@ class Infidelity_SR(AbstractVariationalDriver):
         else:
             self.target_state = target_state
 
-        if isinstance(variational_state, FullSumState):
-            raise TypeError(
-                "NGD drivers do not support FullSumState. Please use 'standard' drivers with SR."
-            )
         super().__init__(
             variational_state, optimizer, minimized_quantity_name="Infidelity"
         )
 
+        if isinstance(variational_state, FullSumState):
+            if use_ntk:
+                raise ValueError(
+                    "NTK makes no sense for a variational FullSumState and is not supported."
+                    )
+            use_ntk = False
         if use_ntk is None:
             use_ntk = variational_state.n_parameters > variational_state.n_samples
             print("Automatic SR implementation choice: ", "NTK" if use_ntk else "QGT")
