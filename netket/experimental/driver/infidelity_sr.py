@@ -36,6 +36,16 @@ def _flatten_samples(x):
     return jax.lax.collapse(x, 0, x.ndim - 1)
 
 
+def get_samples_and_pdf(vstate):
+    if isinstance(vstate, FullSumState):
+        samples = vstate.hilbert.all_states()
+        pdf = vstate.probability_distribution()
+    else:
+        samples = _flatten_samples(vstate.samples)
+        pdf = None
+    return samples, pdf
+
+
 @reference(
     ["Sinibaldi2023Unbiasing", "Gravina2024PTVMC"],
     condition="If using infidelity estimators and optimizers",
@@ -304,12 +314,7 @@ class Infidelity_SR(AbstractVariationalDriver):
             else:
                 compute_sr_update_fun = sr
 
-        if isinstance(self.state, FullSumState):
-            samples = self.state.hilbert.all_states()
-            pdf = self.state.probability_distribution()
-        else:
-            samples = _flatten_samples(self.state.samples)
-            pdf = None
+        samples, pdf = get_samples_and_pdf(self.state)
 
         self._dp, self._old_updates, self.info = compute_sr_update_fun(
             self.state._apply_fun,
@@ -324,7 +329,7 @@ class Infidelity_SR(AbstractVariationalDriver):
             momentum=momentum,
             old_updates=self._old_updates,
             chunk_size=self.chunk_size_bwd,
-            pdf=pdf,
+            weights=pdf,
         )
 
         self._dp = jax.tree_util.tree_map(lambda x: -x, self._dp)
