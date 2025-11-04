@@ -10,7 +10,12 @@ from netket.experimental.observable.infidelity.infidelity_operator import (
     InfidelityOperator,
 )
 
-from netket.experimental.driver.infidelity_sr import _flatten_samples
+
+@jax.jit
+def _flatten_samples(x):
+    # return x.reshape(-1, x.shape[-1])
+    return jax.lax.collapse(x, 0, x.ndim - 1)
+
 
 @expect.dispatch
 def infidelity(vstate: MCState, op: InfidelityOperator, chunk_size: None):
