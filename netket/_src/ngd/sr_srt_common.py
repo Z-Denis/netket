@@ -39,12 +39,14 @@ def _prepare_input(
         The reshaped jacobian and the reshaped local energies.
     """
     N_mc = O_L.shape[0]
+    if weights is None:
+        weights = 1 / N_mc
 
     local_grad = local_grad.flatten()
-    de = local_grad - jnp.mean(local_grad)
+    de = local_grad - jnp.sum(weights * local_grad)
 
-    O_L = O_L / jnp.sqrt(N_mc)
-    dv = 2.0 * de / jnp.sqrt(N_mc)
+    O_L = O_L * jnp.sqrt(weights)
+    dv = 2.0 * de * jnp.sqrt(weights)
 
     if mode == "complex":
         # Concatenate the real and imaginary derivatives of the ansatz
