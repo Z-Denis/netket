@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from functools import partial
+from typing import Union
 
 import jax
 import jax.numpy as jnp
@@ -19,7 +20,7 @@ def _prepare_input(
     local_grad,
     *,
     mode: str,
-    weights: Array | None = None,
+    weights: Union[Array, float, None] = None,
 ) -> tuple[jax.Array, jax.Array]:
     r"""
     Prepare the input for the SR/SRt solvers.
@@ -40,13 +41,13 @@ def _prepare_input(
     """
     N_mc = O_L.shape[0]
     if weights is None:
-        weights = 1 / N_mc
+        weights = 1.0
 
     local_grad = local_grad.flatten()
-    de = local_grad - jnp.sum(weights * local_grad)
+    de = local_grad - jnp.mean(weights * local_grad)
 
-    O_L = O_L * jnp.sqrt(weights)
-    dv = 2.0 * de * jnp.sqrt(weights)
+    O_L = O_L * jnp.sqrt(weights / N_mc)
+    dv = 2.0 * de * jnp.sqrt(weights / N_mc)
 
     if mode == "complex":
         # Concatenate the real and imaginary derivatives of the ansatz
@@ -124,6 +125,8 @@ def _sr_srt_common(
     # Normalize weights for self-normalized importance sampling
     if weights:
         weights = weights / jnp.mean(weights)
+    # p(x) = q(x) * w(x) / jnp.mean(w)
+    pdf = weights / weights.shape[0] if weights else None
 
     jacobians = nkjax.jacobian(
         log_psi,
@@ -134,7 +137,7 @@ def _sr_srt_common(
         dense=True,
         center=True,
         chunk_size=chunk_size,
-        pdf=weights,
+        pdf=pdf,
     )  # jacobian is centered
 
     O_L, dv = _prepare_input(jacobians, local_grad, mode=mode, weights=weights)
