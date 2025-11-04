@@ -46,7 +46,7 @@ def _prepare_input(
     local_grad = local_grad.flatten()
     de = local_grad - jnp.mean(weights * local_grad)
 
-    O_L = O_L * jnp.sqrt(weights / N_mc)
+    O_L = O_L * jax.lax.broadcast_in_dim(jnp.sqrt(weights / N_mc), O_L.shape, (0,))
     dv = 2.0 * de * jnp.sqrt(weights / N_mc)
 
     if mode == "complex":
@@ -123,10 +123,10 @@ def _sr_srt_common(
     )
 
     # Normalize weights for self-normalized importance sampling
-    if weights:
+    if weights is not None:
         weights = weights / jnp.mean(weights)
     # p(x) = q(x) * w(x) / jnp.mean(w)
-    pdf = weights / weights.shape[0] if weights else None
+    pdf = weights / weights.shape[0] if weights is not None else None
 
     jacobians = nkjax.jacobian(
         log_psi,
