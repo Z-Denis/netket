@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from functools import partial
-from typing import Union, Tuple
+from typing import Union
 
 import jax
 import jax.numpy as jnp
@@ -17,7 +17,7 @@ from netket._src.ngd.srt import _compute_srt_update
 def _prepare_weights(
     weights: Union[Array, None],
     n_samples: int,
-) -> Tuple[Union[Array, None], Union[Array, float]]:
+) -> tuple[Union[Array, None], Union[Array, float]]:
     # Normalize weights for self-normalized importance sampling
     if weights is not None:
         weights = weights / jnp.mean(weights)
@@ -59,7 +59,7 @@ def _prepare_input(
     de = local_grad - jnp.sum(scaling_factor * local_grad)
 
     dv = 2.0 * de * jnp.sqrt(scaling_factor)
-    if jax.numpy.ndim(scaling_factor) is not 0:
+    if jax.numpy.ndim(scaling_factor) != 0:
         scaling_factor = jax.lax.broadcast_in_dim(scaling_factor, O_L.shape, (0,))
     O_L = O_L * jnp.sqrt(scaling_factor)
 

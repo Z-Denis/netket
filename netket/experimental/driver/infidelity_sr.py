@@ -230,7 +230,7 @@ class Infidelity_SR(AbstractVariationalDriver):
             if use_ntk:
                 raise ValueError(
                     "NTK makes no sense for a variational FullSumState and is not supported."
-                    )
+                )
             use_ntk = False
         if use_ntk is None:
             use_ntk = variational_state.n_parameters > variational_state.n_samples
