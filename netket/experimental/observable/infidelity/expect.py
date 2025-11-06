@@ -71,11 +71,12 @@ def get_local_estimator(vstate, target_state, cv_coeff=-0.5):
         target_state.model_state,
     )
 
-    # Hloc = weights * jnp.exp(log_val) * jnp.sum(weights_t * jnp.exp(log_val_t))
     Hloc = jnp.exp(log_val) * jnp.sum(weights_t * jnp.exp(log_val_t))
 
-    if isinstance(target_state, FullSumState) or isinstance(vstate, FullSumState):
+    if isinstance(vstate, FullSumState):
         # TODO: warn about this within the driver?
+        Hloc_cv = jnp.sum(weights * Hloc)
+    elif isinstance(target_state, FullSumState):
         Hloc_cv = Hloc
     else:
         Hloc_cv = jnp.exp(log_val + log_val_t).real + cv_coeff * (

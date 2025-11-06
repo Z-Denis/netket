@@ -290,7 +290,15 @@ class Infidelity_SR(AbstractVariationalDriver):
             self.target_state,
             self.cv_coeff,
         )
-        self._loss_stats = nkstats.statistics(1 - local_energies_cv)
+        if isinstance(self.state, FullSumState):
+            I = 1 - local_energies_cv
+            self._loss_stats = nkstats.Stats(
+                mean=I,
+                error_of_mean=0.0,
+                variance=0.0,
+            )
+        else:
+            self._loss_stats = nkstats.statistics(1 - local_energies_cv)
 
         # Extract the hyperparameters which might be iteration dependent
         diag_shift = self.diag_shift
