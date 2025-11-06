@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from functools import partial
-from typing import Union
+from typing import Union, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -14,13 +14,29 @@ from netket._src.ngd.sr import _compute_sr_update
 from netket._src.ngd.srt import _compute_srt_update
 
 
+def _prepare_weights(
+    weights: Union[Array, None],
+    n_samples: int,
+) -> Tuple[Union[Array, None], Union[Array, float]]:
+    # Normalize weights for self-normalized importance sampling
+    if weights is not None:
+        weights = weights / jnp.mean(weights)
+        # p(x) = q(x) * w(x) / jnp.mean(w)
+        pdf = weights / n_samples
+        mass = pdf
+    else:
+        pdf = None
+        mass = 1 / n_samples
+    return pdf, mass
+
+
 @partial(jax.jit, static_argnames=("mode",))
 def _prepare_input(
     O_L,
     local_grad,
     *,
     mode: str,
-    weights: Union[Array, float, None] = None,
+    scaling_factor: Union[Array, float],
 ) -> tuple[jax.Array, jax.Array]:
     r"""
     Prepare the input for the SR/SRt solvers.
@@ -39,15 +55,13 @@ def _prepare_input(
     Returns:
         The reshaped jacobian and the reshaped local energies.
     """
-    N_mc = O_L.shape[0]
-    if weights is None:
-        weights = 1.0
-
     local_grad = local_grad.flatten()
-    de = local_grad - jnp.mean(weights * local_grad)
+    de = local_grad - jnp.sum(scaling_factor * local_grad)
 
-    O_L = O_L * jax.lax.broadcast_in_dim(jnp.sqrt(weights / N_mc), O_L.shape, (0,))
-    dv = 2.0 * de * jnp.sqrt(weights / N_mc)
+    dv = 2.0 * de * jnp.sqrt(scaling_factor)
+    if jax.numpy.ndim(scaling_factor) is not 0:
+        scaling_factor = jax.lax.broadcast_in_dim(scaling_factor, O_L.shape, (0,))
+    O_L = O_L * jnp.sqrt(scaling_factor)
 
     if mode == "complex":
         # Concatenate the real and imaginary derivatives of the ansatz
@@ -122,11 +136,7 @@ def _sr_srt_common(
         lambda x: jax.ShapeDtypeStruct(x.shape, x.dtype), parameters
     )
 
-    # Normalize weights for self-normalized importance sampling
-    if weights is not None:
-        weights = weights / jnp.mean(weights)
-    # p(x) = q(x) * w(x) / jnp.mean(w)
-    pdf = weights / weights.shape[0] if weights is not None else None
+    pdf, mass = _prepare_weights(weights, samples.shape[0])
 
     jacobians = nkjax.jacobian(
         log_psi,
@@ -140,7 +150,7 @@ def _sr_srt_common(
         pdf=pdf,
     )  # jacobian is centered
 
-    O_L, dv = _prepare_input(jacobians, local_grad, mode=mode, weights=weights)
+    O_L, dv = _prepare_input(jacobians, local_grad, mode=mode, scaling_factor=mass)
 
     if old_updates is None and momentum is not None:
         old_updates = jnp.zeros(jacobians.shape[-1], dtype=jacobians.dtype)
